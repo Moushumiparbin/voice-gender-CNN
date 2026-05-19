@@ -9,12 +9,16 @@ st.set_page_config(page_title="Speech Gender Classification", layout="centered")
 st.title("🎤 Assamese Speech Gender Classification")
 st.write("Upload a WAV file to predict gender")
 
+import keras
+import streamlit as st
+
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model(
-        "final_hybrid_model.h5",
+    model = keras.models.load_model(
+        "hybrid_model.keras",
         compile=False
     )
+    return model
 
 model = load_model()
 
