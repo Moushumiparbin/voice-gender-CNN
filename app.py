@@ -7,7 +7,10 @@ from utils import predict_audio
 # ================= LOAD MODEL (SAFE CACHE) =================
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model("hybrid_model.h5")
+    return tf.keras.models.load_model(
+        "hybrid_model.h5",
+        compile=False
+    )
 
 model = load_model()
 
