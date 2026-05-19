@@ -1,10 +1,15 @@
 import streamlit as st
 import numpy as np
 import tensorflow as tf
+import tempfile
 from utils import predict_audio
 
-# ================= LOAD MODEL =================
-model = tf.keras.models.load_model("hybrid_model.h5")
+# ================= LOAD MODEL (SAFE CACHE) =================
+@st.cache_resource
+def load_model():
+    return tf.keras.models.load_model("hybrid_model.h5")
+
+model = load_model()
 
 # ================= UI =================
 st.set_page_config(page_title="Speech Gender Classification", layout="centered")
@@ -16,16 +21,20 @@ uploaded_file = st.file_uploader("Upload Audio File", type=["wav"])
 
 if uploaded_file is not None:
 
-    # save uploaded file temporarily
-    file_path = f"/tmp/{uploaded_file.name}"
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.read())
+    # safer temp file handling
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(uploaded_file.read())
+        file_path = tmp.name
 
     st.audio(uploaded_file)
 
     st.info("Processing audio... please wait")
 
-    label, confidence = predict_audio(file_path, model)
+    try:
+        label, confidence = predict_audio(file_path, model)
 
-    st.success(f"🎯 Prediction: {label}")
-    st.write(f"📊 Confidence: {confidence*100:.2f}%")
+        st.success(f"🎯 Prediction: {label}")
+        st.write(f"📊 Confidence: {confidence*100:.2f}%")
+
+    except Exception as e:
+        st.error(f"Error processing audio: {e}")
