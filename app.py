@@ -7,17 +7,19 @@ from utils import predict_audio
 # ================= PAGE CONFIG (MUST BE FIRST) =================
 st.set_page_config(page_title="Speech Gender Classification", layout="centered")
 
+# ================= TITLE =================
 st.title("🎤 Assamese Speech Gender Classification")
 st.write("Upload a WAV file and the model will predict Gender (Male/Female)")
 
-# ================= LOAD MODEL (SAFE FIX) =================
+# ================= LOAD MODEL (FIXED) =================
 @st.cache_resource
 def load_model():
     return tf.keras.models.load_model(
         "hybrid_model.keras",
         compile=False,
-        safe_mode=False
+        custom_objects={}
     )
+
 model = load_model()
 
 # ================= FILE UPLOAD =================
@@ -25,7 +27,7 @@ uploaded_file = st.file_uploader("Upload Audio File", type=["wav"])
 
 if uploaded_file is not None:
 
-    # save temp file safely
+    # Save uploaded file safely
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(uploaded_file.read())
         file_path = tmp.name
@@ -35,6 +37,7 @@ if uploaded_file is not None:
     st.info("Processing audio... please wait")
 
     try:
+        # Prediction function from utils.py
         label, confidence = predict_audio(file_path, model)
 
         st.success(f"🎯 Prediction: {label}")
