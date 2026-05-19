@@ -1,16 +1,16 @@
 import numpy as np
 import librosa
-from pydub import AudioSegment
-import uuid
 from collections import Counter
+import uuid
 
 SR = 16000
 N_MFCC = 13
 MAX_LEN = 130
+CHUNK_DURATION = 3  # seconds
 
-def extract_features(file_path):
 
-    y, sr = librosa.load(file_path, sr=SR)
+# ================= FEATURE EXTRACTION =================
+def extract_features(y, sr):
 
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=N_MFCC)
     delta = librosa.feature.delta(mfcc)
@@ -30,33 +30,43 @@ def extract_features(file_path):
     return features
 
 
+# ================= AUDIO CHUNKING (NO PYDUB) =================
 def chunk_audio(file_path):
-    audio = AudioSegment.from_wav(file_path)
+
+    y, sr = librosa.load(file_path, sr=SR)
+
+    chunk_size = SR * CHUNK_DURATION
+
     chunks = []
 
-    for i in range(0, len(audio), 3000):
-        chunk = audio[i:i+3000]
+    for i in range(0, len(y), chunk_size):
 
-        if chunk.dBFS == float('-inf') or chunk.dBFS < -45:
+        chunk = y[i:i + chunk_size]
+
+        if len(chunk) < SR:  # ignore too small chunks
             continue
 
-        temp_path = f"/tmp/{uuid.uuid4().hex}.wav"
-        chunk.export(temp_path, format="wav")
-        chunks.append(temp_path)
+        if np.max(np.abs(chunk)) < 0.01:  # silence filter
+            continue
+
+        chunks.append((chunk, sr))
 
     return chunks
 
 
+# ================= PREDICTION =================
 def predict_audio(file_path, model):
+
     chunks = chunk_audio(file_path)
     results = []
 
-    for chunk_path in chunks:
-        features = extract_features(chunk_path)
+    for chunk, sr in chunks:
 
-        # CNN-LSTM input format
+        features = extract_features(chunk, sr)
+
+        # CNN-LSTM format
         features = np.transpose(features, (1, 0))
-        features = features[np.newaxis, ...]
+        features = np.expand_dims(features, axis=0)
 
         pred = model.predict(features, verbose=0)
 
@@ -64,7 +74,7 @@ def predict_audio(file_path, model):
         results.append(label)
 
     if len(results) == 0:
-        return "No valid audio detected", 0
+        return "No valid audio detected", 0.0
 
     counts = Counter(results)
     final = counts.most_common(1)[0][0]
