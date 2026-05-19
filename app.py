@@ -16,7 +16,8 @@ import streamlit as st
 def load_model():
     model = keras.models.load_model(
         "hybrid_model.keras",
-        compile=False
+        compile=False,
+        custom_objects={}
     )
     return model
 
