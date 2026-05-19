@@ -2,32 +2,31 @@ import streamlit as st
 import numpy as np
 import tensorflow as tf
 import tempfile
+
 from utils import predict_audio
 
-# ================= PAGE CONFIG (MUST BE FIRST) =================
 st.set_page_config(page_title="Speech Gender Classification", layout="centered")
 
-# ================= TITLE =================
 st.title("🎤 Assamese Speech Gender Classification")
 st.write("Upload a WAV file and the model will predict Gender (Male/Female)")
 
-# ================= LOAD MODEL (FIXED) =================
+
+# ================= SAFE MODEL LOADING =================
 @st.cache_resource
 def load_model():
     return tf.keras.models.load_model(
         "hybrid_model.keras",
-        compile=False,
-        custom_objects={}
+        compile=False
     )
 
 model = load_model()
+
 
 # ================= FILE UPLOAD =================
 uploaded_file = st.file_uploader("Upload Audio File", type=["wav"])
 
 if uploaded_file is not None:
 
-    # Save uploaded file safely
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(uploaded_file.read())
         file_path = tmp.name
@@ -37,7 +36,6 @@ if uploaded_file is not None:
     st.info("Processing audio... please wait")
 
     try:
-        # Prediction function from utils.py
         label, confidence = predict_audio(file_path, model)
 
         st.success(f"🎯 Prediction: {label}")
