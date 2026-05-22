@@ -12,9 +12,9 @@ from collections import Counter
 AudioSegment.converter = "ffmpeg"
 
 # =========================
-# SAFE MODEL LOADING (FIXED)
+# LOAD MODEL (FIXED)
 # =========================
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "cnn_gender_model.keras")
+MODEL_PATH = "cnn_gender_model_FIXED.keras"
 
 model = tf.keras.models.load_model(
     MODEL_PATH,
@@ -23,7 +23,7 @@ model = tf.keras.models.load_model(
 )
 
 # =========================
-# UI SETUP
+# STREAMLIT UI
 # =========================
 st.set_page_config(page_title="Voice Gender Detection", layout="centered")
 
@@ -48,13 +48,14 @@ def predict(file_path, threshold=0.5):
         if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
             continue
 
-        temp_file = "temp.wav"
+        # safe temp file path (important for cloud)
+        temp_file = os.path.join("/tmp", "temp.wav")
         chunk.export(temp_file, format="wav")
 
         # feature extraction
         feat = extract_features(temp_file)
 
-        # CNN shape
+        # CNN input shape (1, 39, 130, 1)
         feat = feat[np.newaxis, ..., np.newaxis]
 
         prob = model.predict(feat, verbose=0)[0][0]
@@ -75,7 +76,7 @@ def predict(file_path, threshold=0.5):
 # =========================
 if uploaded_file is not None:
 
-    file_path = "temp_uploaded.wav"
+    file_path = os.path.join("/tmp", "uploaded.wav")
 
     with open(file_path, "wb") as f:
         f.write(uploaded_file.read())
