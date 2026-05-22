@@ -20,7 +20,7 @@ MAX_LEN = 130
 EPS = 1e-8
 
 # 🔥 CHANGED HERE (IMPORTANT)
-MODEL_PATH = "gender_model.keras"
+MODEL_PATH = "gender_model.h5"
 
 # =========================
 # FEATURE EXTRACTION
@@ -55,9 +55,10 @@ MODEL_PATH = "gender_model.h5"
 
 @st.cache_resource
 def load_model_safe():
-    return tf.keras.models.load_model(MODEL_PATH, compile=False)
-model = load_model_safe()
-
+    return tf.keras.models.load_model(
+        MODEL_PATH,
+        compile=False
+    )
 # =========================
 # UI
 # =========================
