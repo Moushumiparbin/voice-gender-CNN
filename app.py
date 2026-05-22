@@ -7,17 +7,20 @@ from collections import Counter
 import librosa
 
 # =========================
-# FFmpeg (safe fallback)
+# FFmpeg setup (safe)
 # =========================
 AudioSegment.converter = "ffmpeg"
 
 # =========================
-# FEATURE EXTRACTION
+# AUDIO SETTINGS
 # =========================
 SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
 
+# =========================
+# FEATURE EXTRACTION
+# =========================
 def extract_features(file_path):
     y, sr = librosa.load(file_path, sr=SR)
 
@@ -27,12 +30,14 @@ def extract_features(file_path):
 
     features = np.vstack([mfcc, delta, delta2])
 
+    # padding / trimming
     if features.shape[1] < MAX_LEN:
         pad = MAX_LEN - features.shape[1]
         features = np.pad(features, ((0,0),(0,pad)))
     else:
         features = features[:, :MAX_LEN]
 
+    # normalization
     features = (features - np.mean(features, axis=1, keepdims=True)) / (
         np.std(features, axis=1, keepdims=True) + EPS
     )
@@ -40,32 +45,29 @@ def extract_features(file_path):
     return features.astype(np.float32)
 
 # =========================
-# MODEL LOADING (FIXED ✔)
+# MODEL LOADING (FIXED)
 # =========================
-MODEL_PATH = "cnn_gender_model_FIXED.keras"
+MODEL_PATH = "gender_model.keras"
 
 @st.cache_resource
 def load_model_safe():
-    model = tf.keras.models.load_model(
-        MODEL_PATH,
-        compile=False
-    )
+    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
     return model
 
 model = load_model_safe()
 
 # =========================
-# UI
+# STREAMLIT UI
 # =========================
 st.set_page_config(page_title="Voice Gender Detection", layout="centered")
 
 st.title("🎤 Voice Gender Classification")
-st.write("Upload a WAV file")
+st.write("Upload a WAV file for prediction")
 
 uploaded_file = st.file_uploader("Upload Audio", type=["wav"])
 
 # =========================
-# PREDICTION
+# PREDICTION FUNCTION
 # =========================
 def predict(file_path, threshold=0.5):
 
@@ -76,6 +78,7 @@ def predict(file_path, threshold=0.5):
 
         chunk = audio[i:i+3000]
 
+        # skip silent chunks
         if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
             continue
 
@@ -99,7 +102,7 @@ def predict(file_path, threshold=0.5):
     return final_label, confidence
 
 # =========================
-# UI LOGIC
+# APP LOGIC
 # =========================
 if uploaded_file is not None:
 
@@ -116,7 +119,7 @@ if uploaded_file is not None:
             label, conf = predict(file_path)
 
         if label is None:
-            st.warning("No speech detected")
+            st.warning("No speech detected in audio")
         else:
             st.success(f"🎯 Prediction: {label}")
             st.info(f"📊 Confidence: {conf:.3f}")
