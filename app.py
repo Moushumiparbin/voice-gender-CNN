@@ -7,16 +7,18 @@ from collections import Counter
 import librosa
 
 # =========================
-# FFmpeg setup (safe)
+# FFmpeg setup
 # =========================
 AudioSegment.converter = "ffmpeg"
 
 # =========================
-# AUDIO SETTINGS
+# SETTINGS
 # =========================
 SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
+
+MODEL_PATH = "gender_model.h5"
 
 # =========================
 # FEATURE EXTRACTION
@@ -30,10 +32,10 @@ def extract_features(file_path):
 
     features = np.vstack([mfcc, delta, delta2])
 
-    # padding / trimming
+    # pad / trim
     if features.shape[1] < MAX_LEN:
         pad = MAX_LEN - features.shape[1]
-        features = np.pad(features, ((0,0),(0,pad)))
+        features = np.pad(features, ((0, 0), (0, pad)))
     else:
         features = features[:, :MAX_LEN]
 
@@ -45,19 +47,16 @@ def extract_features(file_path):
     return features.astype(np.float32)
 
 # =========================
-# MODEL LOADING (FIXED)
+# LOAD MODEL (SAFE)
 # =========================
-MODEL_PATH = "gender_model.keras"
-
 @st.cache_resource
 def load_model_safe():
-    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-    return model
+    return tf.keras.models.load_model(MODEL_PATH, compile=False)
 
 model = load_model_safe()
 
 # =========================
-# STREAMLIT UI
+# UI
 # =========================
 st.set_page_config(page_title="Voice Gender Detection", layout="centered")
 
@@ -67,7 +66,7 @@ st.write("Upload a WAV file for prediction")
 uploaded_file = st.file_uploader("Upload Audio", type=["wav"])
 
 # =========================
-# PREDICTION FUNCTION
+# PREDICTION
 # =========================
 def predict(file_path, threshold=0.5):
 
@@ -78,7 +77,7 @@ def predict(file_path, threshold=0.5):
 
         chunk = audio[i:i+3000]
 
-        # skip silent chunks
+        # skip silence
         if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
             continue
 
