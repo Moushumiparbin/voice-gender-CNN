@@ -45,12 +45,12 @@ def extract_features(file_path):
 # =========================
 MODEL_PATH = "cnn_gender_model_FIXED.keras"
 
-model = tf.keras.models.load_model(
-    MODEL_PATH,
-    compile=False,
-    custom_objects={}
-)
 
+
+model = tf.keras.models.load_model(
+    "cnn_gender_model_STREAMLIT_SAFE.keras",
+    compile=False
+)
 # =========================
 # STREAMLIT UI
 # =========================
