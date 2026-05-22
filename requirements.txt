@@ -1,5 +1,5 @@
 streamlit
-tensorflow==2.15.0
+tensorflow==2.14.0
 librosa
 numpy
 pydub
