@@ -6,21 +6,26 @@ from tensorflow.keras.models import load_model
 from utils import extract_features
 from collections import Counter
 
-
+# =========================
+# FFmpeg setup (IMPORTANT)
+# =========================
 AudioSegment.converter = "ffmpeg"
 
 # =========================
 # LOAD MODEL (FIXED)
 # =========================
-model = load_model("cnn_gender_model_tf", compile=False)
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "cnn_gender_model.keras")
+model = load_model(MODEL_PATH, compile=False)
 
+# =========================
+# STREAMLIT UI
+# =========================
 st.set_page_config(page_title="Voice Gender Detection", layout="centered")
 
 st.title("🎤 Voice Gender Classification (CNN)")
-st.write("Upload a WAV file and predict gender")
+st.write("Upload a WAV file to predict gender")
 
 uploaded_file = st.file_uploader("Upload Audio", type=["wav"])
-
 
 # =========================
 # PREDICTION FUNCTION
@@ -44,7 +49,7 @@ def predict(file_path, threshold=0.5):
         # feature extraction
         feat = extract_features(temp_file)
 
-        # CNN input shape
+        # CNN input shape (1, 39, 130, 1)
         feat = feat[np.newaxis, ..., np.newaxis]
 
         prob = model.predict(feat, verbose=0)[0][0]
@@ -59,7 +64,6 @@ def predict(file_path, threshold=0.5):
     confidence = Counter(predictions)[final_label] / len(predictions)
 
     return final_label, confidence
-
 
 # =========================
 # UI LOGIC
