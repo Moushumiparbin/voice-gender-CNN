@@ -20,7 +20,6 @@ SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
 
-# IMPORTANT
 MODEL_PATH = "gender.weights.h5"
 
 # =========================
@@ -49,7 +48,7 @@ def extract_features(file_path):
         delta2
     ])
 
-    # Padding
+    # padding
     if features.shape[1] < MAX_LEN:
 
         pad = MAX_LEN - features.shape[1]
@@ -63,7 +62,7 @@ def extract_features(file_path):
 
         features = features[:, :MAX_LEN]
 
-    # Normalize
+    # normalization
     features = (
         features -
         np.mean(features, axis=1, keepdims=True)
@@ -82,33 +81,39 @@ def load_model_safe():
 
     model = tf.keras.Sequential([
 
-        tf.keras.layers.Input(shape=(39,130,1)),
+        tf.keras.layers.InputLayer(
+            input_shape=(39,130,1)
+        ),
 
         tf.keras.layers.Conv2D(
-            32,
-            (3,3),
+            filters=32,
+            kernel_size=(3,3),
             padding="same",
             activation="relu"
         ),
 
         tf.keras.layers.BatchNormalization(),
 
-        tf.keras.layers.MaxPooling2D((2,2)),
+        tf.keras.layers.MaxPooling2D(
+            pool_size=(2,2)
+        ),
 
         tf.keras.layers.Conv2D(
-            64,
-            (3,3),
+            filters=64,
+            kernel_size=(3,3),
             padding="same",
             activation="relu"
         ),
 
         tf.keras.layers.BatchNormalization(),
 
-        tf.keras.layers.MaxPooling2D((2,2)),
+        tf.keras.layers.MaxPooling2D(
+            pool_size=(2,2)
+        ),
 
         tf.keras.layers.Conv2D(
-            128,
-            (3,3),
+            filters=128,
+            kernel_size=(3,3),
             padding="same",
             activation="relu"
         ),
@@ -118,14 +123,16 @@ def load_model_safe():
         tf.keras.layers.GlobalAveragePooling2D(),
 
         tf.keras.layers.Dense(
-            128,
+            units=128,
             activation="relu"
         ),
 
-        tf.keras.layers.Dropout(0.4),
+        tf.keras.layers.Dropout(
+            rate=0.4
+        ),
 
         tf.keras.layers.Dense(
-            1,
+            units=1,
             activation="sigmoid"
         )
     ])
@@ -136,7 +143,9 @@ def load_model_safe():
 
     return model
 
+# =========================
 # LOAD MODEL
+# =========================
 model = load_model_safe()
 
 # =========================
@@ -170,7 +179,7 @@ def predict(file_path, threshold=0.5):
 
         chunk = audio[i:i+3000]
 
-        # Skip silence
+        # skip silence
         if (
             chunk.dBFS == float("-inf")
             or chunk.dBFS < -55
@@ -201,11 +210,11 @@ def predict(file_path, threshold=0.5):
 
         predictions.append(label)
 
-    # No speech
+    # no speech
     if len(predictions) == 0:
         return None, 0
 
-    # Majority voting
+    # majority voting
     final_label = Counter(
         predictions
     ).most_common(1)[0][0]
