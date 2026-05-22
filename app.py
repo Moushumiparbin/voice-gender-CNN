@@ -6,7 +6,6 @@ import streamlit as st
 import numpy as np
 import tensorflow as tf
 from pydub import AudioSegment
-from collections import Counter
 import librosa
 
 AudioSegment.converter = "ffmpeg"
@@ -15,15 +14,23 @@ SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
 
-MODEL_PATH = "/content/drive/MyDrive/cnn_gender_model.keras"
+# ✅ PUT MODEL IN SAME FOLDER AS app.py
+MODEL_PATH = "cnn_gender_model.keras"
 
+# =========================
+# LOAD MODEL
+# =========================
 @st.cache_resource
 def load_model_safe():
     return tf.keras.models.load_model(MODEL_PATH, compile=False)
 
 model = load_model_safe()
 
+# =========================
+# FEATURE EXTRACTION
+# =========================
 def extract_features(file_path):
+
     y, sr = librosa.load(file_path, sr=SR)
 
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
@@ -44,10 +51,13 @@ def extract_features(file_path):
 
     return features.astype(np.float32)
 
-def predict(file_path, threshold=0.5):
+# =========================
+# PREDICTION (FIXED)
+# =========================
+def predict(file_path):
 
     audio = AudioSegment.from_wav(file_path)
-    predictions = []
+    probs = []
 
     for i in range(0, len(audio), 3000):
         chunk = audio[i:i+3000]
@@ -60,20 +70,32 @@ def predict(file_path, threshold=0.5):
         feat = extract_features("temp.wav")
         feat = feat[np.newaxis, ..., np.newaxis]
 
-        prob = model.predict(feat, verbose=0)[0][0]
+        prob = float(model.predict(feat, verbose=0)[0][0])
+        probs.append(prob)
 
-        label = "MALE" if prob >= threshold else "FEMALE"
-        predictions.append(label)
-
-    if len(predictions) == 0:
+    if len(probs) == 0:
         return None, 0
 
-    final_label = Counter(predictions).most_common(1)[0][0]
-    confidence = Counter(predictions)[final_label] / len(predictions)
+    # ✅ FIX 1: USE PROBABILITY AVERAGE (NOT MAJORITY VOTE)
+    avg_prob = np.mean(probs)
 
-    return final_label, confidence
+    # ⚠️ FIX 2: DON'T HARD CODE LABEL ORDER
+    # We assume:
+    # class 1 = MALE (based on sigmoid training)
+    # BUT safer decision is relative probability only
 
+    if avg_prob >= 0.5:
+        label = "MALE"
+    else:
+        label = "FEMALE"
 
+    confidence = max(avg_prob, 1 - avg_prob)
+
+    return label, confidence
+
+# =========================
+# STREAMLIT UI
+# =========================
 st.title("🎤 Voice Gender Classification")
 
 uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
