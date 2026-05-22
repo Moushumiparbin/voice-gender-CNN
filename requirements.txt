@@ -1,8 +1,10 @@
 streamlit
-tensorflow
+tensorflow==2.15.0
 librosa
 numpy
 pydub
 scikit-learn
 matplotlib
 soundfile
+ffmpeg-python
+audioread
