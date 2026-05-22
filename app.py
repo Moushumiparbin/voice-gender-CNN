@@ -5,7 +5,8 @@ from pydub import AudioSegment
 import tensorflow as tf
 from collections import Counter
 import librosa
-
+import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 # =========================
 # FFmpeg setup
 # =========================
