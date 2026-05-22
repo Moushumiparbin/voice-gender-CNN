@@ -18,11 +18,11 @@ SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
 
-# IMPORTANT: MUST MATCH YOUR GITHUB FILE NAME
+# IMPORTANT: match your GitHub file name
 MODEL_PATH = "gender_model.h5"
 
 # =========================
-# LOAD MODEL (FIXED)
+# LOAD MODEL
 # =========================
 @st.cache_resource
 def load_model_safe():
@@ -35,6 +35,7 @@ model = load_model_safe()
 # FEATURE EXTRACTION
 # =========================
 def extract_features(file_path):
+
     y, sr = librosa.load(file_path, sr=SR)
 
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
@@ -43,38 +44,30 @@ def extract_features(file_path):
 
     features = np.vstack([mfcc, delta, delta2])
 
-    # pad / truncate
+    # pad or truncate
     if features.shape[1] < MAX_LEN:
         pad = MAX_LEN - features.shape[1]
-        features = np.pad(features, ((0,0),(0,pad)))
+        features = np.pad(features, ((0, 0), (0, pad)))
     else:
         features = features[:, :MAX_LEN]
 
-    # normalize
-    features = (features - np.mean(features, axis=1, keepdims=True)) / (
-        np.std(features, axis=1, keepdims=True) + EPS
-    )
+    features = features.astype(np.float32)
 
-    return features.astype(np.float32)
+    # GLOBAL normalization (IMPORTANT FIX)
+    features = (features - np.mean(features)) / (np.std(features) + EPS)
 
-# =========================
-# STREAMLIT UI
-# =========================
-st.set_page_config(page_title="Voice Gender Detection", layout="centered")
-
-st.title("🎤 Voice Gender Classification")
-st.write("Upload a WAV file")
-
-uploaded_file = st.file_uploader("Upload Audio", type=["wav"])
+    return features
 
 # =========================
-# PREDICTION
+# PREDICTION FUNCTION
 # =========================
 def predict(file_path, threshold=0.5):
+
     audio = AudioSegment.from_wav(file_path)
     predictions = []
 
     for i in range(0, len(audio), 3000):
+
         chunk = audio[i:i+3000]
 
         if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
@@ -88,7 +81,9 @@ def predict(file_path, threshold=0.5):
 
         prob = model.predict(feat, verbose=0)[0][0]
 
+        # ⚠️ IF RESULTS LOOK WRONG, FLIP THIS LINE
         label = "FEMALE" if prob > threshold else "MALE"
+
         predictions.append(label)
 
     if len(predictions) == 0:
@@ -100,11 +95,19 @@ def predict(file_path, threshold=0.5):
     return final_label, confidence
 
 # =========================
-# APP LOGIC
+# STREAMLIT UI
 # =========================
+st.set_page_config(page_title="Voice Gender Detection", layout="centered")
+
+st.title("🎤 Voice Gender Classification")
+st.write("Upload a WAV audio file")
+
+uploaded_file = st.file_uploader("Upload Audio", type=["wav"])
+
 if uploaded_file is not None:
 
     file_path = "temp_uploaded.wav"
+
     with open(file_path, "wb") as f:
         f.write(uploaded_file.read())
 
@@ -113,6 +116,7 @@ if uploaded_file is not None:
     if st.button("Predict Gender"):
 
         with st.spinner("Analyzing audio..."):
+
             label, conf = predict(file_path)
 
         if label is None:
