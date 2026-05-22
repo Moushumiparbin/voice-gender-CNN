@@ -2,23 +2,28 @@ import streamlit as st
 import numpy as np
 import os
 from pydub import AudioSegment
-from tensorflow.keras.models import load_model
+import tensorflow as tf
 from utils import extract_features
 from collections import Counter
 
 # =========================
-# FFmpeg setup (IMPORTANT)
+# FFmpeg setup
 # =========================
 AudioSegment.converter = "ffmpeg"
 
 # =========================
-# LOAD MODEL (FIXED)
+# SAFE MODEL LOADING (FIXED)
 # =========================
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "cnn_gender_model.keras")
-model = load_model(MODEL_PATH, compile=False)
+
+model = tf.keras.models.load_model(
+    MODEL_PATH,
+    compile=False,
+    custom_objects={}
+)
 
 # =========================
-# STREAMLIT UI
+# UI SETUP
 # =========================
 st.set_page_config(page_title="Voice Gender Detection", layout="centered")
 
@@ -49,7 +54,7 @@ def predict(file_path, threshold=0.5):
         # feature extraction
         feat = extract_features(temp_file)
 
-        # CNN input shape (1, 39, 130, 1)
+        # CNN shape
         feat = feat[np.newaxis, ..., np.newaxis]
 
         prob = model.predict(feat, verbose=0)[0][0]
@@ -79,7 +84,8 @@ if uploaded_file is not None:
 
     if st.button("Predict Gender"):
 
-        label, conf = predict(file_path)
+        with st.spinner("Processing audio..."):
+            label, conf = predict(file_path)
 
         if label is None:
             st.warning("⚠️ No speech detected")
