@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 from pydub import AudioSegment
 import librosa
+from collections import Counter
 
 AudioSegment.converter = "ffmpeg"
 
@@ -28,7 +29,7 @@ def load_model():
 model = load_model()
 
 # =========================
-# FEATURE EXTRACTION (IDENTICAL TO TRAINING)
+# FEATURE EXTRACTION (IDENTICAL TO COLAB)
 # =========================
 def extract_features(file_path):
 
@@ -46,25 +47,26 @@ def extract_features(file_path):
     else:
         features = features[:, :MAX_LEN]
 
-    features = (features - np.mean(features, axis=1, keepdims=True)) / (
-        np.std(features, axis=1, keepdims=True) + EPS
-    )
+    # SAME NORMALIZATION AS COLAB
+    features = (features - np.mean(features)) / (np.std(features) + EPS)
 
     return features.astype(np.float32)
 
 # =========================
-# FIXED PREDICTION LOGIC
+# EXACT COLAB-LIKE PREDICTION
 # =========================
 def predict(file_path):
 
     audio = AudioSegment.from_wav(file_path)
 
-    probs = []   # ✅ STORE PROBABILITIES (NOT LABELS)
+    probs = []
 
+    # SAME chunk size as Colab
     for i in range(0, len(audio), 3000):
 
         chunk = audio[i:i+3000]
 
+        # SAME silence rule as Colab
         if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
             continue
 
@@ -73,18 +75,19 @@ def predict(file_path):
         feat = extract_features("temp.wav")
         feat = feat[np.newaxis, ..., np.newaxis]
 
-        prob = float(model.predict(feat, verbose=0)[0][0])
+        prob = model.predict(feat, verbose=0)[0][0]
         probs.append(prob)
 
     if len(probs) == 0:
         return None, 0
 
     # =========================
-    # FINAL DECISION (CORRECT)
+    # SAME AGGREGATION AS COLAB STYLE
     # =========================
     avg_prob = np.mean(probs)
 
     label = "MALE" if avg_prob > 0.5 else "FEMALE"
+
     confidence = max(avg_prob, 1 - avg_prob)
 
     return label, confidence
@@ -92,7 +95,7 @@ def predict(file_path):
 # =========================
 # STREAMLIT UI
 # =========================
-st.title("🎤 Voice Gender Classification (CNN Fixed)")
+st.title("🎤 Voice Gender Classification (COLAB MATCHED)")
 
 uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
