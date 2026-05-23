@@ -23,11 +23,11 @@ def load_model():
 
 model = load_model()
 
-st.title("🎤 Voice Gender Classification (FINAL CLEAN VERSION)")
+st.title("🎤 Voice Gender Classification")
 
 
 # =========================
-# EXACT FEATURE EXTRACTION (MATCH COLAB)
+# FEATURE EXTRACTION (SAME AS COLAB)
 # =========================
 def extract_features(file_path):
 
@@ -45,7 +45,6 @@ def extract_features(file_path):
     else:
         features = features[:, :MAX_LEN]
 
-    # SAME NORMALIZATION AS TRAINING
     features = (features - np.mean(features, axis=1, keepdims=True)) / (
         np.std(features, axis=1, keepdims=True) + EPS
     )
@@ -54,7 +53,7 @@ def extract_features(file_path):
 
 
 # =========================
-# CLEAN PREDICTION (NO PATCHES)
+# CLEAN PREDICTION LOGIC
 # =========================
 def predict(file_path):
 
@@ -66,6 +65,7 @@ def predict(file_path):
 
         chunk = audio[i:i+3000]
 
+        # skip silence
         if chunk.dBFS < -55:
             continue
 
@@ -75,25 +75,30 @@ def predict(file_path):
         feat = feat[np.newaxis, ..., np.newaxis]
 
         prob = float(model.predict(feat, verbose=0)[0][0])
-
-        st.write("Chunk prob:", prob)
-
         probs.append(prob)
 
     if len(probs) == 0:
-        return None, 0
+        return "UNDETECTED"
 
     # =========================
-    # SIMPLE & CORRECT LOGIC
+    # STABLE DECISION (IMPORTANT)
     # =========================
 
-    avg_prob = np.mean(probs)
+    probs = np.array(probs)
 
-    label = "MALE" if avg_prob > 0.5 else "FEMALE"
+    # remove extreme unstable chunks
+    probs = probs[(probs > 0.2) & (probs < 0.8)]
 
-    confidence = max(avg_prob, 1 - avg_prob)
+    if len(probs) == 0:
+        probs = np.array(probs)
 
-    return label, confidence
+    avg_prob = np.median(probs)
+
+    # FINAL LABEL ONLY
+    if avg_prob > 0.5:
+        return "MALE"
+    else:
+        return "FEMALE"
 
 
 # =========================
@@ -110,10 +115,9 @@ if uploaded_file is not None:
 
     if st.button("Predict Gender"):
 
-        label, conf = predict("temp_uploaded.wav")
+        result = predict("temp_uploaded.wav")
 
-        if label is None:
+        if result == "UNDETECTED":
             st.warning("No speech detected")
         else:
-            st.success(f"Prediction: {label}")
-            st.info(f"Confidence: {conf:.3f}")
+            st.success(f"Prediction: {result}")
