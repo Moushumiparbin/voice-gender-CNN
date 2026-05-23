@@ -11,11 +11,12 @@ from collections import Counter
 AudioSegment.converter = "ffmpeg"
 
 # =========================
-# CONSTANTS (MUST MATCH TRAINING)
+# CONSTANTS (MATCH COLAB)
 # =========================
 SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
+
 MODEL_PATH = "cnn_gender_model.keras"
 
 # =========================
@@ -40,13 +41,14 @@ def extract_features(file_path):
 
     features = np.vstack([mfcc, delta, delta2])  # (39, T)
 
+    # fix time axis
     if features.shape[1] < MAX_LEN:
         pad = MAX_LEN - features.shape[1]
         features = np.pad(features, ((0,0),(0,pad)))
     else:
         features = features[:, :MAX_LEN]
 
-    # normalization (same as training)
+    # normalization (IMPORTANT)
     features = (features - np.mean(features, axis=1, keepdims=True)) / (
         np.std(features, axis=1, keepdims=True) + EPS
     )
@@ -54,7 +56,7 @@ def extract_features(file_path):
     return features.astype(np.float32)
 
 # =========================
-# STABLE PREDICTION LOGIC (MATCH COLAB CNN TESTING STYLE)
+# PREDICTION (COLAB LOGIC + DEBUG)
 # =========================
 def predict(file_path):
 
@@ -66,8 +68,8 @@ def predict(file_path):
 
         chunk = audio[i:i+3000]
 
-        # SAME SILENCE FILTER AS TRAINING
-        if chunk.dBFS == float("-inf") or chunk.dBFS < -40:
+        # skip silence
+        if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
             continue
 
         chunk.export("temp.wav", format="wav")
@@ -76,36 +78,33 @@ def predict(file_path):
         feat = feat[np.newaxis, ..., np.newaxis]
 
         prob = float(model.predict(feat, verbose=0)[0][0])
+
+        # 🔥 DEBUG LINE (VERY IMPORTANT)
+        st.write("Chunk prob:", prob)
+
         probs.append(prob)
 
     if len(probs) == 0:
         return None, 0
 
-    probs = np.array(probs)
-
     # =========================
-    # 🔥 IMPORTANT FIX: REMOVE NOISE CHUNKS
+    # SAME LOGIC AS COLAB
     # =========================
-    probs = probs[(probs > 0.15) & (probs < 0.85)]
-
-    if len(probs) == 0:
-        probs = np.array(probs)
-
-    # =========================
-    # STABLE AGGREGATION (KEY FIX)
-    # =========================
-    avg_prob = np.median(probs)
+    avg_prob = np.mean(probs)
 
     label = "MALE" if avg_prob > 0.5 else "FEMALE"
 
-    confidence = float(max(avg_prob, 1 - avg_prob))
+    confidence = max(avg_prob, 1 - avg_prob)
+
+    # 🔥 DEBUG FINAL
+    st.write("Average prob:", avg_prob)
 
     return label, confidence
 
 # =========================
 # STREAMLIT UI
 # =========================
-st.title("🎤 Voice Gender Classification (Stable CNN)")
+st.title("🎤 Voice Gender Classification (CNN Debug Mode)")
 
 uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
@@ -121,7 +120,7 @@ if uploaded_file is not None:
         label, conf = predict("temp_uploaded.wav")
 
         if label is None:
-            st.warning("No speech detected. Try clearer audio.")
+            st.warning("No speech detected")
         else:
             st.success(f"Prediction: {label}")
             st.info(f"Confidence: {conf:.3f}")
