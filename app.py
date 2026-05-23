@@ -16,7 +16,6 @@ AudioSegment.converter = "ffmpeg"
 SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
-
 MODEL_PATH = "cnn_gender_model.keras"
 
 # =========================
@@ -29,7 +28,7 @@ def load_model():
 model = load_model()
 
 # =========================
-# FEATURE EXTRACTION (IDENTICAL TO COLAB)
+# FEATURE EXTRACTION (EXACT COPY FROM COLAB)
 # =========================
 def extract_features(file_path):
 
@@ -47,26 +46,27 @@ def extract_features(file_path):
     else:
         features = features[:, :MAX_LEN]
 
-    # SAME NORMALIZATION AS COLAB
-    features = (features - np.mean(features)) / (np.std(features) + EPS)
+    # IMPORTANT normalization (same as training)
+    features = (features - np.mean(features, axis=1, keepdims=True)) / (
+        np.std(features, axis=1, keepdims=True) + EPS
+    )
 
     return features.astype(np.float32)
 
 # =========================
-# EXACT COLAB-LIKE PREDICTION
+# PREDICTION (IDENTICAL TO COLAB)
 # =========================
 def predict(file_path):
 
     audio = AudioSegment.from_wav(file_path)
 
-    probs = []
+    predictions = []
 
-    # SAME chunk size as Colab
     for i in range(0, len(audio), 3000):
 
         chunk = audio[i:i+3000]
 
-        # SAME silence rule as Colab
+        # silence filter (same as notebook)
         if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
             continue
 
@@ -76,26 +76,24 @@ def predict(file_path):
         feat = feat[np.newaxis, ..., np.newaxis]
 
         prob = model.predict(feat, verbose=0)[0][0]
-        probs.append(prob)
 
-    if len(probs) == 0:
+        # SAME DECISION RULE AS COLAB
+        label = "MALE" if prob > 0.5 else "FEMALE"
+        predictions.append(label)
+
+    if len(predictions) == 0:
         return None, 0
 
-    # =========================
-    # SAME AGGREGATION AS COLAB STYLE
-    # =========================
-    avg_prob = np.mean(probs)
+    # MAJORITY VOTING (IMPORTANT FIX)
+    final_label = Counter(predictions).most_common(1)[0][0]
+    confidence = Counter(predictions)[final_label] / len(predictions)
 
-    label = "MALE" if avg_prob > 0.5 else "FEMALE"
-
-    confidence = max(avg_prob, 1 - avg_prob)
-
-    return label, confidence
+    return final_label, confidence
 
 # =========================
 # STREAMLIT UI
 # =========================
-st.title("🎤 Voice Gender Classification (COLAB MATCHED)")
+st.title("🎤 Voice Gender Classification (CNN)")
 
 uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
