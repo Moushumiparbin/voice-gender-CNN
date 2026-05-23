@@ -8,6 +8,8 @@ from pydub import AudioSegment
 import librosa
 from collections import Counter
 
+AudioSegment.converter = "ffmpeg"
+
 # =========================
 # CONFIG
 # =========================
@@ -15,8 +17,6 @@ SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
 MODEL_PATH = "cnn_gender_model.keras"
-
-AudioSegment.converter = "ffmpeg"
 
 # =========================
 # LOAD MODEL
@@ -27,8 +27,13 @@ def load_model():
 
 model = load_model()
 
+st.title("🎤 Voice Gender Classification (Stable Demo Version)")
+
+uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
+
+
 # =========================
-# FEATURE EXTRACTION (EXACT COLAB MATCH)
+# FEATURE EXTRACTION (STABLE)
 # =========================
 def extract_features(file_path):
 
@@ -40,22 +45,21 @@ def extract_features(file_path):
 
     features = np.vstack([mfcc, delta, delta2])  # (39, T)
 
-    # FIX TIME AXIS
+    # FIX LENGTH SAFELY
     if features.shape[1] < MAX_LEN:
         pad = MAX_LEN - features.shape[1]
         features = np.pad(features, ((0,0),(0,pad)))
     else:
         features = features[:, :MAX_LEN]
 
-    # EXACT TRAINING NORMALIZATION
-    features = (features - np.mean(features, axis=1, keepdims=True)) / (
-        np.std(features, axis=1, keepdims=True) + EPS
-    )
+    # GLOBAL NORMALIZATION (IMPORTANT FIX FOR DEPLOYMENT)
+    features = (features - np.mean(features)) / (np.std(features) + EPS)
 
     return features.astype(np.float32)
 
+
 # =========================
-# PREDICTION (PRODUCTION FIX)
+# STABLE PREDICTION ENGINE
 # =========================
 def predict(file_path):
 
@@ -67,8 +71,8 @@ def predict(file_path):
 
         chunk = audio[i:i+3000]
 
-        # silence removal
-        if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
+        # skip silence
+        if chunk.dBFS < -50:
             continue
 
         chunk.export("temp.wav", format="wav")
@@ -78,7 +82,6 @@ def predict(file_path):
 
         prob = float(model.predict(feat, verbose=0)[0][0])
 
-        # DEBUG (important)
         st.write("Chunk prob:", prob)
 
         probs.append(prob)
@@ -87,33 +90,31 @@ def predict(file_path):
         return None, 0
 
     # =========================
-    # STABLE AGGREGATION (FIXED)
+    # STABILITY FIX (IMPORTANT)
     # =========================
 
     probs = np.array(probs)
 
-    # IMPORTANT: use trimmed mean (removes noise better than mean/median)
-    probs = np.sort(probs)
-    trimmed = probs[int(0.1*len(probs)) : int(0.9*len(probs))]
+    # REMOVE EXTREMES (noise stabilizer)
+    probs = probs[(probs > 0.2) & (probs < 0.8)] if len(probs) > 3 else probs
 
-    avg_prob = np.mean(trimmed) if len(trimmed) > 0 else np.mean(probs)
+    avg_prob = np.mean(probs)
 
-    # label
-    label = "MALE" if avg_prob > 0.5 else "FEMALE"
+    # FINAL DECISION
+    if avg_prob > 0.55:
+        label = "MALE"
+    else:
+        label = "FEMALE"
 
-    # confidence (distance from decision boundary)
-    confidence = abs(avg_prob - 0.5) * 2
-    confidence = float(np.clip(confidence, 0, 1))
+    # confidence (spread-aware)
+    confidence = float(max(avg_prob, 1 - avg_prob))
 
     return label, confidence
 
-# =========================
-# STREAMLIT UI
-# =========================
-st.title("🎤 Voice Gender Classification (CNN - Production Fixed)")
 
-uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
-
+# =========================
+# UI
+# =========================
 if uploaded_file is not None:
 
     with open("temp_uploaded.wav", "wb") as f:
@@ -126,7 +127,7 @@ if uploaded_file is not None:
         label, conf = predict("temp_uploaded.wav")
 
         if label is None:
-            st.warning("No speech detected in audio")
+            st.warning("No speech detected")
         else:
             st.success(f"Prediction: {label}")
             st.info(f"Confidence: {conf:.3f}")
