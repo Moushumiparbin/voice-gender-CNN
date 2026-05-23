@@ -4,16 +4,18 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import streamlit as st
 import numpy as np
 import tensorflow as tf
-from pydub import AudioSegment
 import librosa
+from pydub import AudioSegment
 
-AudioSegment.converter = "ffmpeg"
-
+# =========================
+# CONFIG
+# =========================
 SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
 MODEL_PATH = "cnn_gender_model.keras"
 
+AudioSegment.converter = "ffmpeg"
 
 # =========================
 # LOAD MODEL
@@ -24,18 +26,12 @@ def load_model():
 
 model = load_model()
 
-st.title("🎤 Voice Gender Classification")
-
-
 # =========================
-# FEATURE EXTRACTION (IDENTICAL TO COLAB)
+# FEATURE EXTRACTION (SAME AS COLAB)
 # =========================
 def extract_features(file_path):
 
     y, sr = librosa.load(file_path, sr=SR)
-
-    # normalize audio
-    y = y / (np.max(np.abs(y)) + 1e-8)
 
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
     delta = librosa.feature.delta(mfcc)
@@ -43,25 +39,24 @@ def extract_features(file_path):
 
     features = np.vstack([mfcc, delta, delta2])  # (39, T)
 
-    # FIX LENGTH EXACTLY LIKE TRAINING
+    # pad / truncate
     if features.shape[1] < MAX_LEN:
         pad = MAX_LEN - features.shape[1]
         features = np.pad(features, ((0,0),(0,pad)))
     else:
         features = features[:, :MAX_LEN]
 
-    # normalization SAME AS TRAINING
+    # normalize
     features = (features - np.mean(features, axis=1, keepdims=True)) / (
         np.std(features, axis=1, keepdims=True) + EPS
     )
 
     return features.astype(np.float32)
 
-
 # =========================
-# CLEAN PREDICTION
+# CLEAN PREDICTION (FIXED VERSION)
 # =========================
-def predict(file_path):
+def predict_gender(file_path):
 
     audio = AudioSegment.from_wav(file_path)
 
@@ -71,8 +66,8 @@ def predict(file_path):
 
         chunk = audio[i:i+3000]
 
-        # skip silence only (safe)
-        if chunk.dBFS < -55:
+        # skip silence
+        if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
             continue
 
         chunk.export("temp.wav", format="wav")
@@ -81,42 +76,59 @@ def predict(file_path):
         feat = feat[np.newaxis, ..., np.newaxis]
 
         prob = float(model.predict(feat, verbose=0)[0][0])
+
         probs.append(prob)
 
+        # 🔍 DEBUG VIEW (for viva)
+        st.write("Chunk prob:", prob)
+
     if len(probs) == 0:
-        return "UNDETECTED"
+        return None, 0, 0
 
     # =========================
-    # FINAL CORRECT AGGREGATION
+    # STABLE AGGREGATION
     # =========================
-    probs = np.array(probs)
+    avg_prob = np.mean(probs)
 
-    final_prob = np.mean(probs)
-
-    # FINAL DECISION ONLY
-    if final_prob > 0.5:
-        return "MALE"
+    # FINAL DECISION (SMOOTHED THRESHOLD)
+    if avg_prob > 0.55:
+        label = "MALE"
+    elif avg_prob < 0.45:
+        label = "FEMALE"
     else:
-        return "FEMALE"
+        label = "UNCERTAIN"
 
+    confidence = abs(avg_prob - 0.5) * 2  # normalized confidence
+
+    return label, confidence, avg_prob
 
 # =========================
-# UI
+# STREAMLIT UI
 # =========================
-uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
+st.title("🎤 Voice Gender Classification (CNN)")
+st.write("Upload a WAV file for prediction")
+
+uploaded_file = st.file_uploader("Upload WAV", type=["wav"])
 
 if uploaded_file is not None:
 
-    with open("temp_uploaded.wav", "wb") as f:
+    with open("temp_input.wav", "wb") as f:
         f.write(uploaded_file.read())
 
     st.audio(uploaded_file)
 
     if st.button("Predict Gender"):
 
-        result = predict("temp_uploaded.wav")
+        label, conf, avg_prob = predict_gender("temp_input.wav")
 
-        if result == "UNDETECTED":
-            st.warning("No speech detected")
+        if label is None:
+            st.warning("No speech detected in audio")
         else:
-            st.success(f"Prediction: {result}")
+            st.success(f"Prediction: {label}")
+
+            st.info(f"Avg Male Probability: {avg_prob:.3f}")
+
+            st.info(f"Confidence (normalized): {conf:.3f}")
+
+            st.write("Raw decision logic:")
+            st.write("MALE if prob > 0.55 else FEMALE")
