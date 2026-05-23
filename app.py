@@ -5,13 +5,10 @@ os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 import streamlit as st
 import numpy as np
 import tensorflow as tf
-from pydub import AudioSegment
 import librosa
 
-AudioSegment.converter = "ffmpeg"
-
 # =========================
-# SETTINGS
+# SETTINGS (MUST MATCH TRAINING)
 # =========================
 SR = 16000
 MAX_LEN = 130
@@ -29,26 +26,26 @@ def load_model_safe():
 model = load_model_safe()
 
 # =========================
-# FEATURE EXTRACTION
+# FEATURE EXTRACTION (EXACT COPY FROM COLAB)
 # =========================
 def extract_features(file_path):
 
-    y, sr = librosa.load(file_path, sr=SR)
+    y, sr = librosa.load(file_path, sr=SR, mono=True)
 
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
     delta = librosa.feature.delta(mfcc)
     delta2 = librosa.feature.delta(mfcc, order=2)
 
-    features = np.vstack([mfcc, delta, delta2])
+    features = np.vstack([mfcc, delta, delta2])  # (39, T)
 
-    # pad / truncate to fixed length
+    # FIX TIME LENGTH (130)
     if features.shape[1] < MAX_LEN:
         pad = MAX_LEN - features.shape[1]
         features = np.pad(features, ((0,0),(0,pad)))
     else:
         features = features[:, :MAX_LEN]
 
-    # normalization
+    # NORMALIZATION (EXACT TRAIN MATCH)
     features = (features - np.mean(features, axis=1, keepdims=True)) / (
         np.std(features, axis=1, keepdims=True) + EPS
     )
@@ -56,72 +53,50 @@ def extract_features(file_path):
     return features.astype(np.float32)
 
 # =========================
-# PREDICTION FUNCTION
+# PREDICTION (NO CHUNKING — FIXES 0.5 PROBLEM)
 # =========================
 def predict(file_path):
 
-    audio = AudioSegment.from_wav(file_path)
+    feat = extract_features(file_path)
 
-    probs = []
+    feat = feat[np.newaxis, ..., np.newaxis]  # (1,39,130,1)
 
-    for i in range(0, len(audio), 3000):
+    prob = float(model.predict(feat, verbose=0)[0][0])
 
-        chunk = audio[i:i+3000]
-
-        # relaxed silence filtering
-        if chunk.dBFS == float("-inf") or chunk.dBFS < -60:
-            continue
-
-        chunk.export("temp.wav", format="wav")
-
-        feat = extract_features("temp.wav")
-        feat = feat[np.newaxis, ..., np.newaxis]
-
-        prob = float(model.predict(feat, verbose=0)[0][0])
-
-        probs.append(prob)
-
-    if len(probs) == 0:
-        return None, 0
-
-    # =========================
-    # STABLE AGGREGATION
-    # =========================
-    avg_prob = np.mean(probs)
-
-    # decision boundary (slightly soft for real audio)
-    if avg_prob >= 0.52:
+    # FINAL DECISION (CALIBRATED BUT SIMPLE)
+    if prob >= 0.52:
         label = "MALE"
-    elif avg_prob <= 0.48:
+    elif prob <= 0.48:
         label = "FEMALE"
     else:
         label = "UNCERTAIN"
 
-    # confidence (stable version)
-    confidence = max(avg_prob, 1 - avg_prob)
+    confidence = max(prob, 1 - prob)
 
     return label, confidence
 
 # =========================
 # STREAMLIT UI
 # =========================
-st.title("🎤 Voice Gender Classification (Stable Version)")
+st.title("🎤 Voice Gender Classification (Fixed 39 MFCC Model)")
 
 uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
 if uploaded_file is not None:
 
-    with open("temp_uploaded.wav", "wb") as f:
+    file_path = "temp.wav"
+
+    with open(file_path, "wb") as f:
         f.write(uploaded_file.read())
 
     st.audio(uploaded_file)
 
     if st.button("Predict Gender"):
 
-        label, conf = predict("temp_uploaded.wav")
+        label, conf = predict(file_path)
 
         if label is None:
-            st.warning("No speech detected")
+            st.warning("No valid audio detected")
         else:
             st.success(f"Prediction: {label}")
             st.info(f"Confidence: {conf:.3f}")
