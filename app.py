@@ -1,101 +1,100 @@
 import streamlit as st
 import numpy as np
 import librosa
-import tensorflow as tf
+from tensorflow.keras.models import load_model
+from pydub import AudioSegment
 import os
 
-# =========================
+# ======================
 # LOAD MODEL
-# =========================
-model = tf.keras.models.load_model("cnn_gender_model.keras", compile=False)
+# ======================
+model = load_model("cnn_gender_model.keras")
 
-# =========================
-# CONSTANTS (same as training)
-# =========================
 SR = 16000
 MAX_LEN = 130
-EPS = 1e-8
 
-# =========================
-# FEATURE EXTRACTION (FIXED - MATCH TRAINING)
-# =========================
+# ======================
+# FEATURE EXTRACTION
+# ======================
 def extract_features(file_path):
-
-    # IMPORTANT: use ONLY librosa (no pydub)
     y, sr = librosa.load(file_path, sr=SR)
 
-    # normalize waveform
-    y = y / (np.max(np.abs(y)) + 1e-8)
-
-    # MFCC features
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
     delta = librosa.feature.delta(mfcc)
     delta2 = librosa.feature.delta(mfcc, order=2)
 
-    # combine (39, T)
-    feat = np.vstack([mfcc, delta, delta2])
+    features = np.vstack([mfcc, delta, delta2])
 
-    # FIX LENGTH (130 frames)
-    if feat.shape[1] < MAX_LEN:
-        feat = np.pad(feat, ((0,0),(0, MAX_LEN - feat.shape[1])))
+    # pad / truncate
+    if features.shape[1] < MAX_LEN:
+        pad = MAX_LEN - features.shape[1]
+        features = np.pad(features, ((0,0),(0,pad)))
     else:
-        feat = feat[:, :MAX_LEN]
+        features = features[:, :MAX_LEN]
 
-    # IMPORTANT NORMALIZATION (CRITICAL FIX)
-    feat = (feat - np.mean(feat)) / (np.std(feat) + EPS)
+    # normalize
+    features = (features - np.mean(features)) / (np.std(features) + 1e-8)
 
-    return feat.astype(np.float32)
+    return features.astype(np.float32)
 
-# =========================
+# ======================
 # PREDICTION FUNCTION
-# =========================
+# ======================
 def predict_gender(file_path):
 
-    feat = extract_features(file_path)
+    audio = AudioSegment.from_wav(file_path)
 
-    # reshape for CNN
-    feat = feat[np.newaxis, ..., np.newaxis]
+    probs = []
 
-    prob = float(model.predict(feat, verbose=0)[0][0])
+    for i in range(0, len(audio), 3000):
 
-    # stable decision logic
-    if prob > 0.60:
+        chunk = audio[i:i+3000]
+
+        if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
+            continue
+
+        chunk.export("temp.wav", format="wav")
+
+        feat = extract_features("temp.wav")
+        feat = feat[np.newaxis, ..., np.newaxis]
+
+        prob = model.predict(feat, verbose=0)[0][0]
+        probs.append(prob)
+
+    if len(probs) == 0:
+        return "No speech detected", 0.0
+
+    avg_prob = np.mean(probs)
+
+    # ======================
+    # FINAL DECISION RULE
+    # ======================
+    if avg_prob >= 0.5:
         label = "MALE"
-    elif prob < 0.40:
-        label = "FEMALE"
     else:
-        label = "UNCERTAIN"
+        label = "FEMALE"
 
-    return label, prob
+    return label, avg_prob
 
-# =========================
+
+# ======================
 # STREAMLIT UI
-# =========================
-st.title("🎤 Gender Classification from Voice (CNN Model)")
-st.write("Upload a WAV file for prediction")
+# ======================
+st.title("🎤 Assamese Gender Prediction App")
 
-uploaded_file = st.file_uploader("Upload Audio", type=["wav"])
+uploaded_file = st.file_uploader("Upload a WAV file", type=["wav"])
 
 if uploaded_file is not None:
 
-    file_path = "temp.wav"
+    path = "uploaded.wav"
 
-    with open(file_path, "wb") as f:
+    with open(path, "wb") as f:
         f.write(uploaded_file.read())
 
-    st.audio(uploaded_file)
+    st.audio(path)
 
-    if st.button("Predict Gender"):
+    label, prob = predict_gender(path)
 
-        label, prob = predict_gender(file_path)
+    st.success(f"Prediction: {label}")
 
-        st.success(f"Prediction: {label}")
-        st.info(f"Male Probability: {prob:.4f}")
-
-        st.write("Decision Rule:")
-        st.code("MALE if prob > 0.60 else FEMALE if prob < 0.40 else UNCERTAIN")
-
-        st.write("Debug Info (important for viva):")
-        st.write("Feature shape:", extract_features(file_path).shape)
-        st.write("Mean:", np.mean(extract_features(file_path)))
-        st.write("Std:", np.std(extract_features(file_path)))
+    st.write("Male probability:", float(prob))
