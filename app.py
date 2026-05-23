@@ -10,6 +10,9 @@ from collections import Counter
 
 AudioSegment.converter = "ffmpeg"
 
+# =========================
+# CONSTANTS (MUST MATCH TRAINING)
+# =========================
 SR = 16000
 MAX_LEN = 130
 EPS = 1e-8
@@ -26,7 +29,7 @@ def load_model():
 model = load_model()
 
 # =========================
-# FEATURE EXTRACTION (EXACT SAME)
+# FEATURE EXTRACTION (IDENTICAL TO COLAB)
 # =========================
 def extract_features(file_path):
 
@@ -36,7 +39,7 @@ def extract_features(file_path):
     delta = librosa.feature.delta(mfcc)
     delta2 = librosa.feature.delta(mfcc, order=2)
 
-    features = np.vstack([mfcc, delta, delta2])
+    features = np.vstack([mfcc, delta, delta2])  # (39, T)
 
     if features.shape[1] < MAX_LEN:
         pad = MAX_LEN - features.shape[1]
@@ -51,9 +54,9 @@ def extract_features(file_path):
     return features.astype(np.float32)
 
 # =========================
-# PREDICTION (FIXED EXACTLY LIKE NOTEBOOK)
+# PREDICTION (SAME AS NOTEBOOK)
 # =========================
-def predict(file_path, threshold=0.5):
+def predict(file_path):
 
     audio = AudioSegment.from_wav(file_path)
 
@@ -71,17 +74,16 @@ def predict(file_path, threshold=0.5):
         feat = extract_features("temp.wav")
         feat = feat[np.newaxis, ..., np.newaxis]
 
-        prob = float(model.predict(feat, verbose=0)[0][0])
+        prob = model.predict(feat, verbose=0)[0][0]
 
-        # SAME LOGIC AS NOTEBOOK
-        label = "MALE" if prob > threshold else "FEMALE"
+        label = "MALE" if prob > 0.5 else "FEMALE"
         predictions.append(label)
 
     if len(predictions) == 0:
         return None, 0
 
     # =========================
-    # MAJORITY VOTE (IMPORTANT)
+    # MAJORITY VOTING (IMPORTANT)
     # =========================
     final_label = Counter(predictions).most_common(1)[0][0]
     confidence = Counter(predictions)[final_label] / len(predictions)
@@ -91,7 +93,7 @@ def predict(file_path, threshold=0.5):
 # =========================
 # STREAMLIT UI
 # =========================
-st.title("🎤 Voice Gender Classification")
+st.title("🎤 Voice Gender Classification (CNN)")
 
 uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
