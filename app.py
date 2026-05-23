@@ -6,13 +6,12 @@ import streamlit as st
 import numpy as np
 import tensorflow as tf
 from pydub import AudioSegment
-from collections import Counter
 import librosa
 
 AudioSegment.converter = "ffmpeg"
 
 # =========================
-# SETTINGS (MATCH NOTEBOOK)
+# SETTINGS
 # =========================
 SR = 16000
 MAX_LEN = 130
@@ -21,7 +20,7 @@ EPS = 1e-8
 MODEL_PATH = "cnn_gender_model.keras"
 
 # =========================
-# LOAD MODEL
+# LOAD MODEL (TF 2.16 SAFE)
 # =========================
 @st.cache_resource
 def load_model_safe():
@@ -30,7 +29,7 @@ def load_model_safe():
 model = load_model_safe()
 
 # =========================
-# FEATURE EXTRACTION (EXACT SAME AS NOTEBOOK)
+# FEATURE EXTRACTION
 # =========================
 def extract_features(file_path):
 
@@ -55,18 +54,27 @@ def extract_features(file_path):
     return features.astype(np.float32)
 
 # =========================
-# PREDICTION (MATCH NOTEBOOK EXACTLY)
+# CALIBRATION (VERY IMPORTANT)
+# fixes sigmoid overconfidence bias
 # =========================
-def predict(file_path, threshold=0.5):
+def calibrate(p):
+    return (p - 0.5) * 0.8 + 0.5
+
+# =========================
+# PREDICTION
+# =========================
+def predict(file_path):
 
     audio = AudioSegment.from_wav(file_path)
-    predictions = []
+
+    probs = []
 
     for i in range(0, len(audio), 3000):
 
         chunk = audio[i:i+3000]
 
-        if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
+        # relaxed silence filter (IMPORTANT FIX)
+        if chunk.dBFS == float("-inf") or chunk.dBFS < -60:
             continue
 
         chunk.export("temp.wav", format="wav")
@@ -74,39 +82,52 @@ def predict(file_path, threshold=0.5):
         feat = extract_features("temp.wav")
         feat = feat[np.newaxis, ..., np.newaxis]
 
-        prob = model.predict(feat, verbose=0)[0][0]
+        prob = float(model.predict(feat, verbose=0)[0][0])
 
-        # 🔥 EXACT SAME LOGIC AS NOTEBOOK
-        label = "MALE" if prob > threshold else "FEMALE"
-        predictions.append(label)
+        # APPLY CALIBRATION
+        prob = calibrate(prob)
 
-    if len(predictions) == 0:
+        probs.append(prob)
+
+    if len(probs) == 0:
         return None, 0
 
-    # 🔥 MAJORITY VOTING (SAME AS NOTEBOOK)
-    final_label = Counter(predictions).most_common(1)[0][0]
-    confidence = Counter(predictions)[final_label] / len(predictions)
+    # =========================
+    # STABLE AGGREGATION
+    # =========================
+    avg_prob = np.mean(probs)
 
-    return final_label, confidence
+    # decision logic (soft boundary)
+    if avg_prob > 0.55:
+        label = "MALE"
+    elif avg_prob < 0.45:
+        label = "FEMALE"
+    else:
+        label = "UNCERTAIN"
+
+    # confidence (proper scaling)
+    confidence = abs(avg_prob - 0.5) * 2
+    confidence = min(confidence, 1.0)
+
+    return label, confidence
 
 # =========================
 # STREAMLIT UI
 # =========================
-st.title("🎤 Voice Gender Classification (CNN)")
+st.title("🎤 Voice Gender Classification (Fixed Version)")
 
 uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
 if uploaded_file is not None:
 
-    file_path = "temp_uploaded.wav"
-    with open(file_path, "wb") as f:
+    with open("temp_uploaded.wav", "wb") as f:
         f.write(uploaded_file.read())
 
     st.audio(uploaded_file)
 
     if st.button("Predict Gender"):
 
-        label, conf = predict(file_path)
+        label, conf = predict("temp_uploaded.wav")
 
         if label is None:
             st.warning("No speech detected")
