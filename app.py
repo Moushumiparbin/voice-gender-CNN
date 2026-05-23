@@ -23,36 +23,38 @@ def load_model():
 
 model = load_model()
 
-st.title("🎤 Voice Gender Classification (FINAL STABLE VERSION)")
+st.title("🎤 Voice Gender Classification (FINAL CLEAN VERSION)")
 
 
 # =========================
-# FEATURE EXTRACTION (LOCKED)
+# EXACT FEATURE EXTRACTION (MATCH COLAB)
 # =========================
 def extract_features(file_path):
 
     y, sr = librosa.load(file_path, sr=SR)
 
-    # normalize audio FIRST (important fix)
-    y = y / (np.max(np.abs(y)) + 1e-8)
-
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
     delta = librosa.feature.delta(mfcc)
     delta2 = librosa.feature.delta(mfcc, order=2)
 
-    features = np.vstack([mfcc, delta, delta2])
+    features = np.vstack([mfcc, delta, delta2])  # (39, T)
 
-    # FIX LENGTH
-    features = librosa.util.fix_length(features, size=MAX_LEN, axis=1)
+    if features.shape[1] < MAX_LEN:
+        pad = MAX_LEN - features.shape[1]
+        features = np.pad(features, ((0,0),(0,pad)))
+    else:
+        features = features[:, :MAX_LEN]
 
-    # GLOBAL NORMALIZATION
-    features = (features - np.mean(features)) / (np.std(features) + EPS)
+    # SAME NORMALIZATION AS TRAINING
+    features = (features - np.mean(features, axis=1, keepdims=True)) / (
+        np.std(features, axis=1, keepdims=True) + EPS
+    )
 
     return features.astype(np.float32)
 
 
 # =========================
-# STABLE PREDICTION ENGINE
+# CLEAN PREDICTION (NO PATCHES)
 # =========================
 def predict(file_path):
 
@@ -64,8 +66,7 @@ def predict(file_path):
 
         chunk = audio[i:i+3000]
 
-        # strict silence filter
-        if chunk.dBFS < -45:
+        if chunk.dBFS < -55:
             continue
 
         chunk.export("temp.wav", format="wav")
@@ -82,27 +83,15 @@ def predict(file_path):
     if len(probs) == 0:
         return None, 0
 
-    probs = np.array(probs)
-
     # =========================
-    # FINAL CALIBRATION FIX
+    # SIMPLE & CORRECT LOGIC
     # =========================
 
-    # remove extreme noise
-    probs = probs[(probs > 0.15) & (probs < 0.85)]
+    avg_prob = np.mean(probs)
 
-    if len(probs) == 0:
-        probs = np.array(probs)
+    label = "MALE" if avg_prob > 0.5 else "FEMALE"
 
-    avg_prob = np.median(probs)  # IMPORTANT: median > mean
-
-    # SOFT calibration shift (fix bias)
-    calibrated = (avg_prob - 0.45) / 0.1
-    calibrated = 1 / (1 + np.exp(-calibrated))  # sigmoid rescale
-
-    label = "MALE" if calibrated > 0.5 else "FEMALE"
-
-    confidence = max(calibrated, 1 - calibrated)
+    confidence = max(avg_prob, 1 - avg_prob)
 
     return label, confidence
 
