@@ -1,21 +1,14 @@
 import streamlit as st
 import numpy as np
 import librosa
-from tensorflow.keras.models import load_model
 from pydub import AudioSegment
-import os
+from tensorflow.keras.models import load_model
 
-# ======================
-# LOAD MODEL
-# ======================
 model = load_model("cnn_gender_model.keras")
 
 SR = 16000
-MAX_LEN = 130
+CHUNK = 3000
 
-# ======================
-# FEATURE EXTRACTION
-# ======================
 def extract_features(file_path):
     y, sr = librosa.load(file_path, sr=SR)
 
@@ -23,34 +16,28 @@ def extract_features(file_path):
     delta = librosa.feature.delta(mfcc)
     delta2 = librosa.feature.delta(mfcc, order=2)
 
-    features = np.vstack([mfcc, delta, delta2])
+    feat = np.vstack([mfcc, delta, delta2])
 
-    # pad / truncate
-    if features.shape[1] < MAX_LEN:
-        pad = MAX_LEN - features.shape[1]
-        features = np.pad(features, ((0,0),(0,pad)))
+    if feat.shape[1] < 130:
+        feat = np.pad(feat, ((0,0),(0,130-feat.shape[1])))
     else:
-        features = features[:, :MAX_LEN]
+        feat = feat[:, :130]
 
-    # normalize
-    features = (features - np.mean(features)) / (np.std(features) + 1e-8)
+    feat = (feat - np.mean(feat)) / (np.std(feat) + 1e-8)
 
-    return features.astype(np.float32)
+    return feat.astype(np.float32)
 
-# ======================
-# PREDICTION FUNCTION
-# ======================
-def predict_gender(file_path):
 
-    audio = AudioSegment.from_wav(file_path)
+def predict_audio(file):
 
-    probs = []
+    audio = AudioSegment.from_file(file)
 
-    for i in range(0, len(audio), 3000):
+    preds = []
 
-        chunk = audio[i:i+3000]
+    for i in range(0, len(audio), CHUNK):
+        chunk = audio[i:i+CHUNK]
 
-        if chunk.dBFS == float("-inf") or chunk.dBFS < -55:
+        if chunk.dBFS == float("-inf"):
             continue
 
         chunk.export("temp.wav", format="wav")
@@ -59,42 +46,22 @@ def predict_gender(file_path):
         feat = feat[np.newaxis, ..., np.newaxis]
 
         prob = model.predict(feat, verbose=0)[0][0]
-        probs.append(prob)
 
-    if len(probs) == 0:
-        return "No speech detected", 0.0
+        preds.append(prob > 0.5)
 
-    avg_prob = np.mean(probs)
+    if len(preds) == 0:
+        return "No speech detected"
 
-    # ======================
-    # FINAL DECISION RULE
-    # ======================
-    if avg_prob >= 0.5:
-        label = "MALE"
-    else:
-        label = "FEMALE"
-
-    return label, avg_prob
+    return "MALE" if sum(preds) > len(preds)/2 else "FEMALE"
 
 
-# ======================
-# STREAMLIT UI
-# ======================
-st.title("🎤 Assamese Gender Prediction App")
+st.title("🎤 Speech Gender Classification (CNN)")
 
-uploaded_file = st.file_uploader("Upload a WAV file", type=["wav"])
+audio_file = st.file_uploader("Upload WAV file", type=["wav"])
 
-if uploaded_file is not None:
+if audio_file is not None:
+    st.audio(audio_file)
 
-    path = "uploaded.wav"
-
-    with open(path, "wb") as f:
-        f.write(uploaded_file.read())
-
-    st.audio(path)
-
-    label, prob = predict_gender(path)
-
-    st.success(f"Prediction: {label}")
-
-    st.write("Male probability:", float(prob))
+    if st.button("Predict Gender"):
+        result = predict_audio(audio_file)
+        st.success(f"Prediction: {result}")
