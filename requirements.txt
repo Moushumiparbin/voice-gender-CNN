@@ -1,10 +1,10 @@
 streamlit
-tensorflow==2.20.0
-keras==3.3.3
-numpy
+tensorflow-cpu==2.16.1
+numpy==1.26.4
 librosa
 pydub
 soundfile
 scikit-learn
 h5py
+protobuf==4.25.3
 ffmpeg-python
